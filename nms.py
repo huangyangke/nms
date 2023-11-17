@@ -72,7 +72,7 @@ def calculate_iou_v2(a, b):
 
     return area_i / np.minimum(area_a[:, np.newaxis], area_b)
     
-def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, match_metric="IOU", sigma=0.5, soft_threshold=0.001, method=2):
+def py_cpu_softnms(dets, labels, scores, iou_threshold=0.3, agnostic=False, match_metric="IOU", sigma=0.5, soft_threshold=0.001, method=2):
     """
     py_cpu_softnms
     :param dets:   boexs 坐标矩阵 format [x1, y1, x2, y2, label]
@@ -90,7 +90,8 @@ def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, match_metric
     # Settings
     min_wh, max_wh = 2, 7680  # (pixels) minimum and maximum box width and height
     # 不同类别加上偏移量 这样计算iou的时候不同类别的框永远为0
-    classes_shift = dets[:, 4:5] * (0 if agnostic else max_wh)  
+    #classes_shift = dets[:, 4:5] * (0 if agnostic else max_wh) 
+    classes_shift = labels[:,np.newaxis] * (0 if agnostic else max_wh)  
     dets += classes_shift
 
     # indexes concatenate boxes with the last column
@@ -173,18 +174,19 @@ def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, match_metric
 
 
 if __name__ == '__main__':
-    boxes = np.array([[200, 200, 400, 400, 0], [220, 220, 420, 420, 0], 
-                      [200, 240, 400, 440, 1], [240, 200, 440, 400, 1], [1, 1, 2, 2, 0]], dtype=np.float32)
+    boxes = np.array([[200, 200, 400, 400], [220, 220, 420, 420], 
+                      [200, 240, 400, 440], [240, 200, 440, 400], [1, 1, 2, 2]], dtype=np.float32)
     
     ########### 测试非极大值抑制 ###########
     boxscores = np.array([0.9, 0.8, 0.7, 0.6, 0.5], dtype=np.float32)
-    index = py_cpu_softnms(boxes, boxscores, match_metric='IOU', method=2)
+    boxlabels = np.array([1, 1, 1, 1, 1], dtype=np.int64)
+    index = py_cpu_softnms(boxes, boxlabels, boxscores, iou_threshold=0.3, agnostic=False, match_metric="IOU", sigma=0.5, soft_threshold=0.001, method=3)
     print(index)
     
-    # import torchvision
-    # import torch
-    # index = torchvision.ops.nms(torch.tensor(boxes), torch.tensor(boxscores), 0.3)
-    # print(index)
+    import torchvision
+    import torch
+    index = torchvision.ops.nms(torch.tensor(boxes), torch.tensor(boxscores), 0.3)
+    print(index)
     
     ########### 测试交并比计算 ###########
     # iou = calculate_iou_v2(boxes, boxes)
