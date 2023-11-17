@@ -50,13 +50,32 @@ def calculate_iou(a, b):
     area_i = np.prod(rb - lt, axis=2) * (lt < rb).all(axis=2)
     area_a = np.prod(a[:, 2:] - a[:, :2], axis=1)
     area_b = np.prod(b[:, 2:] - b[:, :2], axis=1)
-    
+    # area_a[:, np.newaxis] + area_b 维度变化过程
+    # area_a[:, np.newaxis] (5,1) ->(5,5)
+    # area_b (5,) -> (1,5) -> (5,5) 首先会在前面插入一个维度，然后维度为1的dim会进行复制    
     return area_i / (area_a[:, np.newaxis] + area_b - area_i)
+
+# 假设有两个box box1和box2
+# 计算box1与box2交集的面积 / min(box1, box2)
+def calculate_iou_v2(a, b):
+    """
+    a [num1, 4]
+    b [num2, 4]
+    return iou of a and b, numpy version for data augenmentation
+    """
+    lt = np.maximum(a[:, np.newaxis, :2], b[:, :2]) # 左上 [num1, num2, 2]
+    rb = np.minimum(a[:, np.newaxis, 2:], b[:, 2:]) # 右下 [num1, num2, 2]
+
+    area_i = np.prod(rb - lt, axis=2) * (lt < rb).all(axis=2) # (num1, num2) 交集面积
+    area_a = np.prod(a[:, 2:] - a[:, :2], axis=1) # (num1,)
+    area_b = np.prod(b[:, 2:] - b[:, :2], axis=1) # (num2,)
+
+    return area_i / np.minimum(area_a[:, np.newaxis], area_b)
     
-def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, sigma=0.5, soft_threshold=0.001, method=2):
+def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, match_metric="IOU", sigma=0.5, soft_threshold=0.001, method=2):
     """
     py_cpu_softnms
-    :param dets:   boexs 坐标矩阵 format [x1, y1, x2, y2, score]
+    :param dets:   boexs 坐标矩阵 format [x1, y1, x2, y2, label]
     :param scores:     每个 boxes 对应的分数
     :param iou_threshold:     iou 交叠门限
     :param agnostic: 进行nms是否也去除不同类别之间的框 默认False
@@ -124,8 +143,15 @@ def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, sigma=0.5, s
         w = np.maximum(0.0, xx2 - xx1 + 1)
         h = np.maximum(0.0, yy2 - yy1 + 1)
         inter = w * h
-        ovr = inter / (areas[i] + areas[pos:] - inter)
-
+        
+        if match_metric == 'IOU':
+            ovr = inter / (areas[i] + areas[pos:] - inter)
+        elif match_metric == 'IOS':
+            smaller = np.minimum(areas[i], areas[pos:])
+            ovr = inter / smaller   
+        else:
+            raise ValueError()
+         
         # 依据ovr来进行分数惩罚
         # Three methods: 1.linear 2.gaussian 3.original NMS
         if method == 1:  # linear 线形抑制
@@ -147,13 +173,19 @@ def py_cpu_softnms(dets, scores, iou_threshold=0.3, agnostic=False, sigma=0.5, s
 
 
 if __name__ == '__main__':
-    boxes = np.array([[200, 200, 400, 400], [220, 220, 420, 420], 
-                      [200, 240, 400, 440], [240, 200, 440, 400], [1, 1, 2, 2]], dtype=np.float32)
+    boxes = np.array([[200, 200, 400, 400, 0], [220, 220, 420, 420, 0], 
+                      [200, 240, 400, 440, 1], [240, 200, 440, 400, 1], [1, 1, 2, 2, 0]], dtype=np.float32)
+    
+    ########### 测试非极大值抑制 ###########
     boxscores = np.array([0.9, 0.8, 0.7, 0.6, 0.5], dtype=np.float32)
-    index = py_cpu_softnms(boxes, boxscores, method=3)
+    index = py_cpu_softnms(boxes, boxscores, match_metric='IOU', method=2)
     print(index)
     
-    import torchvision
-    import torch
-    index = torchvision.ops.nms(torch.tensor(boxes), torch.tensor(boxscores), 0.3)
-    print(index)
+    # import torchvision
+    # import torch
+    # index = torchvision.ops.nms(torch.tensor(boxes), torch.tensor(boxscores), 0.3)
+    # print(index)
+    
+    ########### 测试交并比计算 ###########
+    # iou = calculate_iou_v2(boxes, boxes)
+    # print(iou)
